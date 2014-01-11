@@ -35,7 +35,7 @@ void Test::testTime(void)
 void Test::testThread(void)
 {
 	v4l2_read_frame(&fd,v4l2_buffers,&v4l2_data);
-	memcpy(v_data,v4l2_data,v4l2_buffers->length);
+	//memcpy(v_data,v4l2_data,v4l2_buffers->length);
 	//std::cout << v4l2_buffers->length << std::endl;
 	//usleep(500000);
 	emit oneFrame( );
@@ -69,20 +69,19 @@ V4l2Cam::V4l2Cam(QWidget *parents):QWidget(parents)
 	allLayout->addWidget(camLabel);
 	allLayout->addLayout(underLayout);
 	setLayout(allLayout);
-	//timer = new QTimer( );
 
-	thread = new QThread;
+	//thread = new QThread;
 	test = new Test;
 	frameNum = 0;
-	previousFrame = new unsigned char[test->width*test->height*3];
-	differFrame = new unsigned char[test->width*test->height*3];
-	tmpFrame = new unsigned char[test->width*test->height*3];
-	test->moveToThread(thread);
-	connect(test,SIGNAL(oneFrame( )),this,SLOT(update( )));
-	connect(thread,SIGNAL(started( )),test,SLOT(testTime( )));
+	previousFrame = new unsigned char[(test->width)*(test->height)*3];
+	differFrame = new unsigned char[(test->width)*(test->height)*3];
+	tmpFrame = new unsigned char[(test->width)*(test->height)*3];
+	//test->moveToThread(thread);
+	//connect(test,SIGNAL(oneFrame( )),this,SLOT(update( )));
+	//connect(thread,SIGNAL(started( )),test,SLOT(testTime( )));
 	connect(this,SIGNAL(switchSignal(const QString &)),test,
 				SLOT(switchVideo(const QString &)));
-	thread->start( );
+	//thread->start( );
 	if(test->formatInt == 1)
 	{
 		img = new QImage( );
@@ -93,9 +92,10 @@ V4l2Cam::V4l2Cam(QWidget *parents):QWidget(parents)
 	}
 	//QObject::connect(timer,SIGNAL(timeout( )),this,
 				//SLOT(cam_show( )));
-	//QObject::connect(timer,SIGNAL(timeout( )),this,
-				//SLOT(update( )));
-	//timer->start(10);
+	timer = new QTimer( );
+	QObject::connect(timer,SIGNAL(timeout( )),this,
+				SLOT(update( )));
+	timer->start(40);
 }
 
 void V4l2Cam::cam_show(void)
@@ -144,12 +144,14 @@ void V4l2Cam::paintEvent(QPaintEvent *)
 		frameNum++;
 		if(frameNum == 5)
 		{
+			v4l2_read_frame(&(test->fd),test->v4l2_buffers,&(test->v4l2_data));
 			yuyv422_to_rgb888_buffer(test->v4l2_data,test->rgb,test->width,test->height);
 			memcpy(previousFrame,test->rgb,test->width*test->height*3);
 			//frameNum++;
 		}
 		else
 		{
+			v4l2_read_frame(&(test->fd),test->v4l2_buffers,&(test->v4l2_data));
 			yuyv422_to_rgb888_buffer(test->v4l2_data,test->rgb,test->width,test->height);
 			memcpy(tmpFrame,test->rgb,test->width*test->height*3);
 			//水平翻转
@@ -158,12 +160,12 @@ void V4l2Cam::paintEvent(QPaintEvent *)
 			Gray(previousFrame,test->width,test->height);
 			Gray(test->rgb,test->width,test->height);
 			//相减
-			Substruction(test->rgb,previousFrame,differFrame,test->width,test->height);
+			Substruction(previousFrame,test->rgb,test->rgb,test->width,test->height);
 			memcpy(previousFrame,tmpFrame,test->width*test->height*3);
 			//二值化
-			Binarization(differFrame,test->width,test->height,100); 
+			Binarization(test->rgb,test->width,test->height,30); 
 			//Binarization(differFrame,test->width,test->height,10); 
-			img->loadFromData(differFrame,test->width*test->height*3*sizeof(char));
+			img->loadFromData(test->rgb,test->width*test->height*3*sizeof(char));
 			camLabel->setPixmap(QPixmap::fromImage(*img));
 		}
 		//mutex.unlock( );
@@ -307,6 +309,7 @@ bool V4l2Cam::Gray(unsigned char* rgb, int width, int height)
 //二值化
 bool V4l2Cam::Binarization(unsigned char* rgb, int width, int height,int value)
 {
+	long count = 0;
 	// 输入参数合法性判断
 	if(rgb==NULL||width<=0||height<=0||value<0)return false;
 
@@ -321,6 +324,7 @@ bool V4l2Cam::Binarization(unsigned char* rgb, int width, int height,int value)
 				*rgb = 255;
 				*(rgb+1) = 255;
 				*(rgb+2) = 255;
+				count++;
 			}
 			else
 			{
@@ -330,6 +334,8 @@ bool V4l2Cam::Binarization(unsigned char* rgb, int width, int height,int value)
 			}
 			rgb = rgb + 3;
 		}
+		if(count > width*height/2)
+			std::cout << "motion" << std::endl;
 	}
 	return true;
 }
