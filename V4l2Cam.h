@@ -61,8 +61,17 @@ private:
 	QPushButton *videoButton;
 	QThread     *thread;
 	Test        *test;
+	unsigned char *previousFrame;
+	unsigned char *differFrame;
+	unsigned char *tmpFrame;
+	int frameNum;
 	int yuyv422_to_rgb888_buffer(unsigned char *yuyv422, unsigned char *rgb, unsigned int width, unsigned int height);
 	int yuyv422_to_rgb_pixel(int y, int u, int v);
+	//翻转函数 rgb翻转
+	bool HFlip(unsigned char* rgb, int width, int height);
+	bool Gray(unsigned char* rgb, int width, int height);
+	bool Binarization(unsigned char* rgb, int width, int height,int value);
+	bool Substruction(unsigned char* previousFrame,unsigned char *currentFrame,unsigned char *differFrame, int width, int height);
 private slots:
 	void cam_show(void);
 	void paintEvent(QPaintEvent *);

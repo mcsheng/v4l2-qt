@@ -73,6 +73,10 @@ V4l2Cam::V4l2Cam(QWidget *parents):QWidget(parents)
 
 	thread = new QThread;
 	test = new Test;
+	frameNum = 0;
+	previousFrame = new unsigned char[test->width*test->height*3];
+	differFrame = new unsigned char[test->width*test->height*3];
+	tmpFrame = new unsigned char[test->width*test->height*3];
 	test->moveToThread(thread);
 	connect(test,SIGNAL(oneFrame( )),this,SLOT(update( )));
 	connect(thread,SIGNAL(started( )),test,SLOT(testTime( )));
@@ -137,10 +141,31 @@ void V4l2Cam::paintEvent(QPaintEvent *)
 		//yuyv422转rgb
 		//mutex互斥量锁定
 		//mutex.lock( );
-		yuyv422_to_rgb888_buffer(test->v4l2_data,test->rgb,test->width,test->height);
-		//std::cout << v4l2_buffers->length << std::endl;
-		img->loadFromData(test->rgb,test->width*test->height*3*sizeof(char));
-		camLabel->setPixmap(QPixmap::fromImage(*img));
+		frameNum++;
+		if(frameNum == 5)
+		{
+			yuyv422_to_rgb888_buffer(test->v4l2_data,test->rgb,test->width,test->height);
+			memcpy(previousFrame,test->rgb,test->width*test->height*3);
+			//frameNum++;
+		}
+		else
+		{
+			yuyv422_to_rgb888_buffer(test->v4l2_data,test->rgb,test->width,test->height);
+			memcpy(tmpFrame,test->rgb,test->width*test->height*3);
+			//水平翻转
+			//HFlip(test->rgb,test->width,test->height);
+			//灰度图
+			Gray(previousFrame,test->width,test->height);
+			Gray(test->rgb,test->width,test->height);
+			//相减
+			Substruction(test->rgb,previousFrame,differFrame,test->width,test->height);
+			memcpy(previousFrame,tmpFrame,test->width*test->height*3);
+			//二值化
+			Binarization(differFrame,test->width,test->height,100); 
+			//Binarization(differFrame,test->width,test->height,10); 
+			img->loadFromData(differFrame,test->width*test->height*3*sizeof(char));
+			camLabel->setPixmap(QPixmap::fromImage(*img));
+		}
 		//mutex.unlock( );
 	}
 }
@@ -201,6 +226,153 @@ int V4l2Cam::yuyv422_to_rgb_pixel(int y, int u, int v)
  	return pixel32;
 }	
 
+bool V4l2Cam::HFlip(unsigned char* rgb, int width, int height)
+{
+	// 输入参数合法性判断
+	if(rgb==NULL||width<=0||height<=0)return false;
+
+	// 每行图像数据的字节数
+	//int LBytes  = (width*24+31)/32*4;
+	int LBytes  = width*3;
+
+	// 临时RGB图像指针
+	unsigned char *rgbtmp  = (unsigned char*)malloc(LBytes*height);
+
+	if(rgbtmp == NULL)
+	{
+		return false;
+	}
+	else
+	{
+		//清零
+		memset(rgbtmp , 0 , LBytes*height);
+	}
+
+	int tmpLine = 0;
+	// 每行
+	for(int i = 0; i < height; i++)
+	{
+		tmpLine = i*LBytes;
+		// 每列
+		for(int j = 0; j < width; j++)
+		{
+			//memcpy((rgbtmp + LBytes * (height - 1 - i) + 3*(width - 1 -j)) , (rgb + LBytes * (height - 1 - i) + 3*j) , 3);
+			//memcpy(rgbtmp+i*LBytes+j*3,rgb+(width-1-j)*3+i*LBytes,3);
+			//下面这个复制比上面的乘法运算更少
+			memcpy(rgbtmp+tmpLine+j*3,rgb+(width-1-j)*3+tmpLine,3);
+			//实现垂直翻转
+			//memcpy(rgbtmp+tmpLine+j*3,rgb+j*3+(height-i)*LBytes,3);
+		}
+	}
+	memcpy(rgb , rgbtmp , LBytes*height);
+	free(rgbtmp);
+	return true;
+}
+
+bool V4l2Cam::Gray(unsigned char* rgb, int width, int height)
+{
+	// 输入参数合法性判断
+	if(rgb==NULL||width<=0||height<=0)return false;
+
+	// 每行图像数据的字节数
+	//int LBytes  = (width*24+31)/32*4;
+	// 每行
+	unsigned char gray; 
+	for(int i = 0; i < height; i++)
+	{
+		// 每列
+		for(int j = 0; j < width; j++)
+		{
+			//浮点算法,效果最好,经典公式法
+			/*gray = (*rgb)*0.11+(*(rgb+1))*0.59+(*(rgb+2))*0.3;
+			*(rgb) = gray; 
+			*(rgb+1) = gray;
+			*(rgb+2) = gray;*/
+			//仅取绿色,效果较差
+			gray = (*(rgb+1));
+			*(rgb) = gray; 
+			*(rgb+1) = gray;
+			*(rgb+2) = gray;
+			//平均值法,效果中规中矩
+			/*unsigned char p = ((*rgb)+(*(rgb+1))+(*(rgb+2)))/3;
+			*(rgb) = p;//B 
+			*(rgb+1) = p;//G
+			*(rgb+2) = p;//R*/
+			rgb = rgb + 3;
+		}
+	}
+	return true;
+}
+
+//二值化
+bool V4l2Cam::Binarization(unsigned char* rgb, int width, int height,int value)
+{
+	// 输入参数合法性判断
+	if(rgb==NULL||width<=0||height<=0||value<0)return false;
+
+	// 每行
+	for(int i = 0; i < height; i++)
+	{
+		// 每列
+		for(int j = 0; j < width; j++)
+		{
+			if(*rgb > value)
+			{
+				*rgb = 255;
+				*(rgb+1) = 255;
+				*(rgb+2) = 255;
+			}
+			else
+			{
+				*rgb = 0;
+				*(rgb+1) = 0;
+				*(rgb+2) = 0;
+			}
+			rgb = rgb + 3;
+		}
+	}
+	return true;
+}
+
+bool V4l2Cam::Substruction(unsigned char* previousFrame,unsigned char *currentFrame,unsigned char *differFrame, int width, int height)
+{
+	// 输入参数合法性判断
+	if(previousFrame==NULL||currentFrame==NULL||width<=0||height<=0)
+	{
+		std::cout << "a" << std::endl;
+		return false;
+	}
+
+	unsigned char value;
+	unsigned char *p = differFrame;
+	// 每行
+	for(int i = 0; i < height; i++)
+	{
+		// 每列
+		for(int j = 0; j < width; j++)
+		{ 
+			value = (*currentFrame) - (*previousFrame);
+			*differFrame = value;
+			*(differFrame+1) = value; 
+			*(differFrame+2) = value;
+			previousFrame = previousFrame + 3;
+			currentFrame = currentFrame + 3;
+			differFrame = differFrame + 3;
+		}
+	}
+
+	/*for(int i = 0; i < height; i++)
+	{
+		// 每列
+		for(int j = 0; j < width; j++)
+		{ 
+			std::cout << (int)*(p++) << std::endl;
+		}
+	}*/
+	return true;
+}
+ 
+
 void V4l2Cam::switchVideo(void)
 {
 	emit switchSignal(videoEdit->text( ));
@@ -213,6 +385,7 @@ V4l2Cam::~V4l2Cam( )
 	delete   videoLabel;
 	delete   videoEdit;
 	delete   videoButton;
+	delete[ ] previousFrame;
 	//v4l2_close(&fd,n_buffers,v4l2_buffers,&format);
 }
 

@@ -1,7 +1,7 @@
 /****************************************************************************
 ** Meta object code from reading C++ file 'V4l2Cam.h'
 **
-** Created: Tue Jan 7 22:17:41 2014
+** Created: Sat Jan 11 19:09:09 2014
 **      by: The Qt Meta Object Compiler version 63 (Qt 4.8.3)
 **
 ** WARNING! All changes made in this file will be lost!
